@@ -4,20 +4,23 @@ This Script extracts data from the souce and appends the data to the target path
 without loosing columns
 """
 from pyspark.sql import SparkSession, DataFrame
+from delta.tables import *
+
+# COMMAND ----------
+
+RETENTION_HOURS = 0 #168 is minimum without setting
 
 # COMMAND ----------
 
 dbutils.widgets.text('source_file_path', '', 'Source File Path')
 dbutils.widgets.text('source_file_format', '', 'Source File Format')
 dbutils.widgets.text('target_file_path', '', 'Target File Path')
-dbutils.widgets.text('primary_keys', '', 'Primary Keys')
 
 # COMMAND ----------
 
 source_file_path = dbutils.widgets.get('source_file_path')
 source_file_format = dbutils.widgets.get('source_file_format')
 target_file_path = dbutils.widgets.get('target_file_path')
-primary_keys = dbutils.widgets.get('primary_keys')
 
 # COMMAND ----------
 
@@ -27,7 +30,9 @@ def extract_data(spark_session: SparkSession, source_path: str, source_format: s
 
     This fuction extracts the data from the source and returns the data frame
     """
-    source_df = spark_session.read.format(source_format.lower()).load(source_path)
+    source_df = (spark_session.read.format(source_format.lower())
+                 .option("inferSchema", "true")
+                 .load(source_path))
     return source_df
 
 # COMMAND ----------
@@ -38,7 +43,30 @@ def load_data(append_df: DataFrame, target_path: str):
 
     This fuction appends the CDC data to the target path
     """
-    append_df.sort(['pos', 'op_ts'], ascending=False).write.mode('append').parquet(path=target_path)
+    target_dt = (append_df.sort(['pos', 'op_ts'], ascending=False)
+                 .coalesce(1)
+                 .write
+                 .mode('append')
+                 .format('delta')
+                 .save(path=target_path))
+    return target_dt
+
+# COMMAND ----------
+
+def repartition_delta_table(spark_session: SparkSession, 
+                            format_df: DataFrame, 
+                            target_path: str):
+  max_partitions = 8
+  if(format_df.rdd.getNumPartitions() >= max_partitions):
+    format_df.coalesce(4).write.mode('overwrite').format('delta').save(target_path)
+    dt = DeltaTable.forPath(spark_sesssion, target_path)
+    dt.vaccum(RETENTION_HOURS)
+  pass
+
+# COMMAND ----------
+
+def get_estimate_partition(dt):
+  pass
 
 # COMMAND ----------
 
@@ -50,8 +78,6 @@ def run_job(spark_session: SparkSession):
     """
     source_df = extract_data(spark_session, source_file_path, source_file_format)
     load_data(source_df, target_file_path)
-    tmp_df = (spark_session.read.format('parquet').load(target_file_path))
-    display(tmp_df)
 
 # COMMAND ----------
 
@@ -64,9 +90,11 @@ if __name__ == "__main__":
 # COMMAND ----------
 
 spark = SparkSession.builder.getOrCreate()
-spark.read.load()
-tmp_source_df = (spark.read.format('avro').option("inferSchema", "true")
-    .load(path='/mnt/landingzoneadls/topics/OMS_GG_BIN_PLANOGRAM_AVRO/year=2022/month=06/day=13'))
-display(tmp_source_df)
+tmp_df = (spark.read.format('delta').load(target_file_path))
+display(tmp_df)
+
 
 # COMMAND ----------
+
+tmp_df = (spark.read.format('delta').load(target_file_path))
+DeltaTable.DeltaTable.isDeltaTable
