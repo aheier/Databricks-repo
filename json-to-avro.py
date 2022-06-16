@@ -5,7 +5,7 @@ from pyspark.sql import SparkSession, DataFrame
 
 spark = SparkSession.builder.getOrCreate()
 # spark.read.load()
-read_df = (spark.read.format('avro').option("inferSchema", "true").load(path='/mnt/rawadls/Test/lz/3'))
+read_df = (spark.read.format('avro').option("inferSchema", "true").load(path='/mnt/rawadls/Test/lz/4'))
 display(read_df)
 read_df.coalesce(1).write.mode('append').format('delta').save('/mnt/rawadls/Test/raw')
 
@@ -13,7 +13,8 @@ read_df.coalesce(1).write.mode('append').format('delta').save('/mnt/rawadls/Test
 
 raw_df = (spark.read.format('delta').load(path='/mnt/rawadls/Test/raw'))
 print(raw_df.rdd.getNumPartitions())
-# display(raw_df)
+display(raw_df)
+print(raw_df.count())
 
 # COMMAND ----------
 
@@ -35,7 +36,7 @@ dt = DeltaTable.forPath(spark, '/mnt/rawadls/Test/raw')
 # COMMAND ----------
 
 dt.vacuum(0)
-
+display(dt.toDF())
 display(dt.history())
 
 # COMMAND ----------
@@ -43,6 +44,7 @@ display(dt.history())
 # spark.conf.set("spark.databricks.delta.properties.defaults.enableChangeDataFeed", "true")
 print(spark.conf.get("spark.databricks.delta.retentionDurationCheck.enabled"))
 spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", 'false')
+print(spark.conf.get("spark.databricks.delta.retentionDurationCheck.enabled"))
 
 # COMMAND ----------
 

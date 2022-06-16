@@ -4,18 +4,11 @@ This Script extracts data from the souce and appends the data to the target path
 without loosing columns
 """
 from pyspark.sql import SparkSession, DataFrame
+from delta.tables import *
 
 # COMMAND ----------
 
-dbutils.widgets.text('source_file_path', '', 'Source File Path')
-dbutils.widgets.text('source_file_format', '', 'Source File Format')
-dbutils.widgets.text('target_file_path', '', 'Target File Path')
-
-# COMMAND ----------
-
-source_file_path = dbutils.widgets.get('source_file_path')
-source_file_format = dbutils.widgets.get('source_file_format')
-target_file_path = dbutils.widgets.get('target_file_path')
+RETENTION_HOURS = 0 #168 is minimum without setting
 
 # COMMAND ----------
 
@@ -39,12 +32,35 @@ def load_data(append_df: DataFrame, target_path: str):
     This fuction appends the CDC data to the target path
     """
     target_dt = (append_df.sort(['pos', 'op_ts'], ascending=False)
-                 .coalesce(1) #to reduce number of files
+                 .coalesce(1)
                  .write
                  .mode('append')
                  .format('delta')
                  .save(path=target_path))
     return target_dt
+
+# COMMAND ----------
+
+def repartition_delta_table(spark_session: SparkSession, 
+                            format_df: DataFrame, 
+                            target_path: str):
+    max_partitions = 8
+    if(format_df.rdd.getNumPartitions() >= max_partitions):
+      format_df.coalesce(4).write.mode('overwrite').format('delta').save(target_path)
+      dt = DeltaTable.forPath(spark_sesssion, target_path)
+      dt.vaccum(RETENTION_HOURS)
+
+# COMMAND ----------
+
+def get_total_file_size(dt):
+  
+    files = dbutils.fs.ls('mnt/rawadls/Test/raw')
+    delta_size = 0
+    for file in files:
+        delta_size += file.size
+        print(file)
+    print(f"Total Bytes: {delta_size}")
+    return delta_size
 
 # COMMAND ----------
 
@@ -64,3 +80,12 @@ if __name__ == "__main__":
     spark.conf.set("spark.sql.parquet.enableVectorizedReader","false")
     spark.conf.set("spark.databricks.delta.properties.defaults.enableChangeDataFeed", "true")
     run_job(spark)
+
+# COMMAND ----------
+
+tmp_df = (spark.read.format('delta').load(target_file_path))
+DeltaTable.DeltaTable.isDeltaTable
+
+# COMMAND ----------
+
+print(get_total_file_size('x'))
